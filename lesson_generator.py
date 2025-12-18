@@ -21,7 +21,7 @@ def get_ai_client():
 AI_MODEL = 'gemini-2.0-flash'
 
 # --- UI Layout ---
-st.title("🎓 AI Lesson Personalizer")
+st.title("AI Lesson Personalizer")
 st.write("Turn any standard lesson into a custom experience based on student interests.")
 
 col1, col2 = st.columns([1, 1], gap="medium")
