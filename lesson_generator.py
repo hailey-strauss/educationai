@@ -1,107 +1,97 @@
 import os
-import sys
+import streamlit as st
 from google import genai
+from dotenv import load_dotenv  
+load_dotenv()                   
 from google.genai.errors import APIError
-from database import create_db_and_tables, add_student, get_all_students, save_lesson, get_db
-from models import Student
 
-# --- LLM Integration Setup ---
+# --- Page Configuration ---
+st.set_page_config(page_title="Personalized Lesson Creator", layout="wide")
 
-# The client will automatically pick up the GEMINI_API_KEY environment variable.
-try:
-    AI_CLIENT = genai.Client() #
-    AI_MODEL = 'gemini-2.5-flash'
-except Exception as e:
-    print(f"Error initializing AI client: {e}")
-    print("Please ensure the GEMINI_API_KEY environment variable is set correctly.")
-    sys.exit(1)
+# --- AI Client Setup ---
+# It's best practice to use st.secrets or environment variables
+gemini_key = os.getenv("GEMINI_API_KEY")
 
+def get_ai_client():
+    if not gemini_key:
+        st.error("Missing GEMINI_API_KEY. Please set it in your environment.")
+        return None
+    return genai.Client(api_key=gemini_key)
 
-# --- 2. Lesson Generation Function ---
+AI_MODEL = 'gemini-2.0-flash'
 
-def generate_lesson(topic: str, student: Student, client: genai.Client):
-    """
-    Generates a personalized lesson using the Gemini API.
-    """
-    accommodations = f"""
-    - Preferred Learning Style: {student.preferred_learning_style}
-    - Known Barriers: {student.known_barriers} 
-    - Interests/Motivators: {student.interests}
-    """
+# --- UI Layout ---
+st.title("🎓 AI Lesson Personalizer")
+st.write("Turn any standard lesson into a custom experience based on student interests.")
+
+col1, col2 = st.columns([1, 1], gap="medium")
+
+with col1:
+    st.subheader("Input Details")
+    # Input 1: Student Interest Information
+    student_interests = st.text_input(
+        "Student Interests & Motivators", 
+        placeholder="e.g. Minecraft, NASA, basketball, drawing..."
+    )
     
-    prompt = f"""
-    You are an expert inclusive education specialist designing a short, highly personalized lesson.
+    # Input 2: The Lesson Content
+    base_lesson = st.text_area(
+        "Current Lesson Plan or Topic", 
+        height=300,
+        placeholder="Paste the lesson content you want to transform here..."
+    )
     
-    **Task:** Create a 5-minute mini-lesson on the topic: "{topic}".
-    
-    **Student Profile (Adapt to these needs):**
-    {accommodations}
-    
-    **Lesson Requirements:**
-    1. **Format:** Use clear, simple, bolded markdown headings.
-    2. **Tone:** Encouraging, clear, and direct.
-    3. **Structure:**
-        * **Objective:** State ONE simple, concrete goal.
-        * **Concept Breakdown:** Break the main concept into 3-5 short, sequential steps. Use bullet points or numbered lists for clarity.
-        * **Analogy/Example:** Integrate the student's **Interests** (e.g., if their interest is 'Space', use a space analogy).
-        * **Activity:** Suggest one short, kinesthetic or visual check-for-understanding activity (e.g., 'Draw it,' 'Build it,' 'Say it out loud').
-    4. **Accessibility:** Ensure the language uses short sentences and avoids overly complex vocabulary to support students with reading difficulties.
-    """
-    
-    print(f"\n--- Generating Lesson for {student.name} on '{topic}' ---")
-    
-    try:
-        response = client.models.generate_content(
-            model=AI_MODEL,
-            contents=prompt
-        )
-        return response.text
-    except APIError as e:
-        return f"**[AI Error]**: Could not generate content. Check API key and quota. Error: {e}"
-    except Exception as e:
-        return f"**[General Error]**: An unexpected error occurred: {e}"
+    generate_btn = st.button("Generate Tailored Lesson", type="primary")
 
-
-# --- 4. Test Script (Execute to see the result!) ---
-
-if __name__ == "__main__":
+with col2:
+    st.subheader("Tailored Output")
     
-    # 1. Ensure DB and Sample Data exist
-    create_db_and_tables()
-    db = next(get_db())
-    
-    students = get_all_students(db)
-    if not students:
-        print("No students found. Run database.py directly to add sample students, then re-run this script.")
-        db.close()
-        sys.exit(1)
+    if generate_btn:
+        if not student_interests or not base_lesson:
+            st.warning("Please provide both student interests and a lesson plan.")
+        else:
+            client = get_ai_client()
+            if client:
+                with st.spinner("Injecting interests into lesson..."):
+                    # Prompt Construction (Injection)
+                    prompt = f"""
+                    You are an expert inclusive education specialist.
+                    
+                    **Target Interest/Motivator:** {student_interests}
+                    
+                    **Original Content:**
+                    {base_lesson}
+                    
+                    **Task:** Rewrite the original content into a 5-minute mini-lesson tailored specifically to the interests provided.
+                    
+                    **Requirements:**
+                    1. **Analogy/Example:** You MUST use the interest ({student_interests}) as the primary way to explain the concept.
+                    2. **Format:** Use bolded markdown headings.
+                    3. **Structure:**
+                        * **Objective:** One concrete goal.
+                        * **Concept Breakdown:** 3-5 short steps.
+                        * **Activity:** One kinesthetic or visual check-for-understanding.
+                    4. **Tone:** Clear, direct, and highly encouraging.
+                    """
 
-    # 2. Select a sample student and topic
-    # We will pick the first sample student (Liam)
-    sample_student: Student = students[0]
-    sample_topic = "How Photosynthesis Works" 
-
-    # 3. Generate the lesson
-    lesson_content = generate_lesson(sample_topic, sample_student, AI_CLIENT)
-    
-    # 4. Save and Print the result
-    if not lesson_content.startswith("**[AI Error]**"):
-        saved_lesson = save_lesson(db, sample_student.id, sample_topic, lesson_content)
-        
-        print("\n" + "="*50)
-        print(f"✅ Lesson Saved Successfully!")
-        print(f"   Student: {saved_lesson.student.name}")
-        print(f"   Topic: {saved_lesson.topic}")
-        print(f"   Lesson ID: {saved_lesson.id}")
-        print("="*50)
-        
-        print("\n*** GENERATED LESSON CONTENT (Markdown Preview) ***\n")
-        print(lesson_content)
-        print("\n************************************************\n")
+                    try:
+                        response = client.models.generate_content(
+                            model=AI_MODEL,
+                            contents=prompt
+                        )
+                        # Display the result
+                        st.markdown(response.text)
+                        
+                        # Add a download option for the teacher
+                        st.download_button(
+                            label="Download Lesson (.txt)",
+                            data=response.text,
+                            file_name="tailored_lesson.txt",
+                            mime="text/plain"
+                        )
+                    except APIError as e:
+                        st.error(f"API Error: {e}")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
     else:
-        print(f"\n❌ Generation failed: {lesson_content}")
-
-    # 5. Check if the lesson is in the database
-    print(f"Total lessons saved for {sample_student.name}: {len(sample_student.lessons)}")
-    
-    db.close()
+        st.info("Your tailored lesson will appear here once you click 'Generate'.")
