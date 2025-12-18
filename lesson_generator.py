@@ -28,13 +28,13 @@ col1, col2 = st.columns([1, 1], gap="medium")
 
 with col1:
     st.subheader("Input Details")
-    # Input 1: Student Interest Information
+    # Input: Student Interest Information
     student_interests = st.text_input(
         "Student Interests & Motivators", 
         placeholder="e.g. Minecraft, NASA, basketball, drawing..."
     )
     
-    # Input 2: The Lesson Content
+    # Input: The Lesson Content
     base_lesson = st.text_area(
         "Current Lesson Plan or Topic", 
         height=300,
